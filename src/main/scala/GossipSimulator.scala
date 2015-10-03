@@ -29,6 +29,7 @@ class Node(boss: ActorRef, s: Int, w: Int) extends Actor {
   var terminateFlag:Boolean = false
   var weight:Double = w
   var countRatioToterminate:Int = 0
+  var lastRumourSentTime:Long = 0
   def receive = {
     case Rumour(actors: Array[ActorRef],graph:Vector[Vector[Int]], myindex:Int) =>
       if(rumourCount<10){
@@ -36,14 +37,19 @@ class Node(boss: ActorRef, s: Int, w: Int) extends Actor {
         /*for(neighbour <- 0 to graph(myindex).size -1){
           actors(graph(myindex)(neighbour)) ! Rumour(actors, graph, graph(myindex)(neighbour))
         }*/
-        var randomNeighbour:Int = Random.nextInt(graph(myindex).size)
-        actors(graph(myindex)(randomNeighbour)) ! Rumour(actors, graph, graph(myindex)(randomNeighbour))
+        val groupSize = Random.nextInt(graph(myindex).size) % 3 + 2 // group size 2 to 4
+        for(neighbour <- 0 to groupSize) {
+          var randomNeighbour: Int = Random.nextInt(graph(myindex).size)
+          actors(graph(myindex)(randomNeighbour)) ! Rumour(actors, graph, graph(myindex)(randomNeighbour))
+          lastRumourSentTime = System.currentTimeMillis()
+        }
+
       }
       else {
         if( !countReached){
           countReached = true
           boss ! terminate(myindex)
-          println("Node " + myindex + " rumour count reached")
+          //println("Node " + myindex + " rumour count reached")
         }
       }
     case PushSum(actors: Array[ActorRef],graph:Vector[Vector[Int]], myindex:Int, s:Double, w:Double) =>
@@ -57,12 +63,15 @@ class Node(boss: ActorRef, s: Int, w: Int) extends Actor {
           if(countRatioToterminate == 3){
             terminateFlag = true
             boss ! terminate(myindex)
-            println("Node " + myindex + " PushSum ratio not changing")
+            //println("Node " + myindex + " PushSum ratio not changing")
           }
           else{
-            var randomNeighbour:Int = Random.nextInt(graph(myindex).size)
-            actors(graph(myindex)(randomNeighbour)) ! PushSum(actors, graph, graph(myindex)(randomNeighbour),s/2,w/2)
-            //println("Node" + myindex + " sending to " + graph(myindex)(randomNeighbour))
+            val groupSize = Random.nextInt(graph(myindex).size) % 3 + 2
+            for(neighbour <- 0 to groupSize) {
+              var randomNeighbour: Int = Random.nextInt(graph(myindex).size)
+              actors(graph(myindex)(randomNeighbour)) ! PushSum(actors, graph, graph(myindex)(randomNeighbour), s / 2, w / 2)
+              //println("Node" + myindex + " sending to " + graph(myindex)(randomNeighbour))
+            }
           }
         }
         else{
@@ -91,7 +100,7 @@ class Boss extends Actor {
       algo = algorithm
       actors = new Array[ActorRef](nodes)
       //Create the actors for number of nodes given and store them in an array
-      for (i <- 0 to nodes - 1) {
+      for (i <- 0 to nodes - 1) { // Creating multiple actors
         actors(i) = context.system.actorOf(Props(new Node(self,i+1,1)), i.toString)
       }
       //Build adjacency list
@@ -120,11 +129,10 @@ class Boss extends Actor {
           }
           //printGraph()
         case "3d" =>
-          val Cube = ofDim[Int](nodes, nodes, nodes)
-
           //Fill Cube
           var unique = 0
           var nodeCubeVal = getCubeRoot(nodes)
+          val Cube = ofDim[Int](nodeCubeVal, nodeCubeVal, nodeCubeVal)
           for (i <- 0 to nodeCubeVal - 1) {
             for (j <- 0 to nodeCubeVal - 1) {
               for (k <- 0 to nodeCubeVal - 1) {
@@ -135,7 +143,7 @@ class Boss extends Actor {
           }
 
           //Print Cube
-          for (i <- 0 to nodeCubeVal - 1) {
+          /*for (i <- 0 to nodeCubeVal - 1) {
             for (j <- 0 to nodeCubeVal - 1) {
               for (k <- 0 to nodeCubeVal - 1) {
                 print(" " + Cube(i)(j)(k))
@@ -143,7 +151,7 @@ class Boss extends Actor {
               print("\n")
             }
             print("\n")
-          }
+          }*/
 
           var x = Array(-1, 0, 0, 1, 0, 0)
           var y = Array(0, -1, 0, 0, 1, 0)
@@ -174,7 +182,6 @@ class Boss extends Actor {
                   }
                   //print("\n")
                 }
-
                 adjList = adjList :+ vec
               }
             }
@@ -182,6 +189,64 @@ class Boss extends Actor {
          // printGraph()
 
         case "imperfect3d" =>
+          //Fill Cube
+          var unique = 0
+          var nodeCubeVal = getCubeRoot(nodes)
+          val Cube = ofDim[Int](nodeCubeVal, nodeCubeVal, nodeCubeVal)
+          for (i <- 0 to nodeCubeVal - 1) {
+            for (j <- 0 to nodeCubeVal - 1) {
+              for (k <- 0 to nodeCubeVal - 1) {
+                Cube(i)(j)(k) = unique
+                unique = unique + 1
+              }
+            }
+          }
+
+          //Print Cube
+          /*for (i <- 0 to nodeCubeVal - 1) {
+            for (j <- 0 to nodeCubeVal - 1) {
+              for (k <- 0 to nodeCubeVal - 1) {
+                print(" " + Cube(i)(j)(k))
+              }
+              print("\n")
+            }
+            print("\n")
+          }*/
+
+          var x = Array(-1, 0, 0, 1, 0, 0)
+          var y = Array(0, -1, 0, 0, 1, 0)
+          var z = Array(0, 0, -1, 0, 0, 1)
+
+          for (m <- 0 to nodeCubeVal - 1) {
+            for (n <- 0 to nodeCubeVal - 1) {
+              for (o <- 0 to nodeCubeVal - 1) {
+                //Return neighbour
+                val f_i = m
+                val f_j = n
+                val f_k = o
+
+                var vec = Vector[Int]()
+                //print("cordinate " + f_i + " " + f_j + " " + f_k + " ")
+                //printf("\n")
+                var p = 0
+                var q = 0
+                var r = 0
+                for (i <- 0 to 5) {
+                  p = f_i + x(i)
+                  q = f_j + y(i)
+                  r = f_k + z(i)
+                  if (p >= 0 && p < nodeCubeVal && q >= 0 && q < nodeCubeVal && r >= 0 && r < nodeCubeVal)
+                  {
+                    vec = vec :+ Cube(p)(q)(r)
+                    //print(" " + Cube(p)(q)(r) + " " + p + " " + q + " " + r + " ")
+                  }
+                  //print("\n")
+                }
+                vec = vec :+ Random.nextInt(nodeCubeVal*nodeCubeVal*nodeCubeVal)
+                adjList = adjList :+ vec
+              }
+            }
+          }
       }
 
       if("gossip".equalsIgnoreCase(algo)){
@@ -193,10 +258,10 @@ class Boss extends Actor {
     case terminate(index:Int) =>
       terminatedNodes += 1
       endTime = System.currentTimeMillis()
-      println("A node terminated, total time = " + (endTime - startTime) + ", algo = " + algo + ", topology = " +topology)
+      //println("A node terminated, total time = " + (endTime - startTime) + ", algo = " + algo + ", topology = " +topology)
       if(terminatedNodes == numofNodes){
-        //endTime = System.currentTimeMillis()
-        //println("All nodes terminated, total time = " + (endTime - startTime) + " algo = " + algo + " topology = " +topology)
+        endTime = System.currentTimeMillis()
+        println("All nodes terminated, total time = " + (endTime - startTime) + "msec, algo = " + algo + ", topology = " +topology)
         context.system.shutdown()
       }
   }
