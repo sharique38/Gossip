@@ -10,9 +10,6 @@ import scala.collection.immutable.HashMap
 import scala.util.Random
 import Array._
 
-/**
- * Created by sharique on 9/20/2015.
- */
 
 case class SpawnWork(nodes:Int, topology:String, algo: String)
 case class Rumour(actors:Array[ActorRef], graph:Vector[Vector[Int]], index:Int)
@@ -22,6 +19,7 @@ case class terminate(index:Int)
 class Node(boss: ActorRef, s: Int, w: Int) extends Actor {
   import context._
   var rumourCount:Int = 0
+  val maxRumour:Int = 10
   var countReached:Boolean = false
   var sum:Double = s
   var current:Double = 0
@@ -32,12 +30,12 @@ class Node(boss: ActorRef, s: Int, w: Int) extends Actor {
   var lastRumourSentTime:Long = 0
   def receive = {
     case Rumour(actors: Array[ActorRef],graph:Vector[Vector[Int]], myindex:Int) =>
-      if(rumourCount<10){
+      if(rumourCount < maxRumour){
         rumourCount += 1
         /*for(neighbour <- 0 to graph(myindex).size -1){
           actors(graph(myindex)(neighbour)) ! Rumour(actors, graph, graph(myindex)(neighbour))
         }*/
-        val groupSize = Random.nextInt(graph(myindex).size) % 3 + 2 // group size 2 to 4
+        val groupSize = Random.nextInt(graph(myindex).size) % 3 + 1 // group size 1 to 4
         for(neighbour <- 0 to groupSize) {
           var randomNeighbour: Int = Random.nextInt(graph(myindex).size)
           actors(graph(myindex)(randomNeighbour)) ! Rumour(actors, graph, graph(myindex)(randomNeighbour))
@@ -49,37 +47,50 @@ class Node(boss: ActorRef, s: Int, w: Int) extends Actor {
         if( !countReached){
           countReached = true
           boss ! terminate(myindex)
-          //println("Node " + myindex + " rumour count reached")
+          println("Node " + myindex + " rumour count reached")
         }
       }
     case PushSum(actors: Array[ActorRef],graph:Vector[Vector[Int]], myindex:Int, s:Double, w:Double) =>
       previous = sum/weight
-      sum += s/2
-      weight += w/2
+      sum += s
+      weight += w
+      sum /= 2
+      weight /= 2
       current = sum/weight
-      if(!terminateFlag){
-        if(Math.abs(current-previous) < 0.0000000001){
+      if(!terminateFlag)
+      {
+        if(Math.abs(current-previous) < 0.0000000001)
+        {
           countRatioToterminate +=1
-          if(countRatioToterminate == 3){
+          if(countRatioToterminate == 3)
+          {
             terminateFlag = true
             boss ! terminate(myindex)
-            //println("Node " + myindex + " PushSum ratio not changing")
+            println("Node " + myindex + " PushSum ratio " + current + " not changing")
+            var randomNeighbour: Int = Random.nextInt(graph(myindex).size)
+            actors(graph(myindex)(randomNeighbour)) ! PushSum(actors, graph, graph(myindex)(randomNeighbour), 0, 0)
+            //println("Node" + myindex + " sending to " + graph(myindex)(randomNeighbour))
           }
-          else{
-            val groupSize = Random.nextInt(graph(myindex).size) % 3 + 2
-            for(neighbour <- 0 to groupSize) {
-              var randomNeighbour: Int = Random.nextInt(graph(myindex).size)
-              actors(graph(myindex)(randomNeighbour)) ! PushSum(actors, graph, graph(myindex)(randomNeighbour), s / 2, w / 2)
-              //println("Node" + myindex + " sending to " + graph(myindex)(randomNeighbour))
-            }
+          else
+          {
+            var randomNeighbour: Int = Random.nextInt(graph(myindex).size)
+            actors(graph(myindex)(randomNeighbour)) ! PushSum(actors, graph, graph(myindex)(randomNeighbour), sum, weight)
+            //println("Node" + myindex + " sending to " + graph(myindex)(randomNeighbour))
           }
         }
-        else{
+        else
+        {
           countRatioToterminate = 0
-          var randomNeighbour:Int = Random.nextInt(graph(myindex).size)
-          actors(graph(myindex)(randomNeighbour)) ! PushSum(actors, graph, graph(myindex)(randomNeighbour),s/2,w/2)
+          var randomNeighbour: Int = Random.nextInt(graph(myindex).size)
+          actors(graph(myindex)(randomNeighbour)) ! PushSum(actors, graph, graph(myindex)(randomNeighbour), sum, weight)
           //println("Node" + myindex + " sending to " + graph(myindex)(randomNeighbour))
         }
+      }
+      else
+      {
+        var randomNeighbour: Int = Random.nextInt(graph(myindex).size)
+        actors(graph(myindex)(randomNeighbour)) ! PushSum(actors, graph, graph(myindex)(randomNeighbour), s, w)
+        //println("Node" + myindex + " sending to " + graph(myindex)(randomNeighbour))
       }
   }
 }
@@ -93,6 +104,7 @@ class Boss extends Actor {
   var terminatedNodes:Int = 0
   var startTime:Long = 0
   var endTime:Long = 0
+  var percent:Double = 0
   def receive = {
     case SpawnWork(nodes:Int,topo:String,algorithm: String) =>
       numofNodes = nodes
@@ -127,11 +139,12 @@ class Boss extends Actor {
             }
             adjList = adjList :+ vec
           }
-          //printGraph()
+        //printGraph()
         case "3d" =>
           //Fill Cube
           var unique = 0
           var nodeCubeVal = getCubeRoot(nodes)
+          numofNodes = nodeCubeVal*nodeCubeVal*nodeCubeVal
           val Cube = ofDim[Int](nodeCubeVal, nodeCubeVal, nodeCubeVal)
           for (i <- 0 to nodeCubeVal - 1) {
             for (j <- 0 to nodeCubeVal - 1) {
@@ -186,7 +199,7 @@ class Boss extends Actor {
               }
             }
           }
-         // printGraph()
+        // printGraph()
 
         case "imperfect3d" =>
           //Fill Cube
@@ -242,7 +255,7 @@ class Boss extends Actor {
                   }
                   //print("\n")
                 }
-                vec = vec :+ Random.nextInt(nodeCubeVal*nodeCubeVal*nodeCubeVal)
+                vec = vec :+ Random.nextInt(numofNodes)
                 adjList = adjList :+ vec
               }
             }
@@ -252,18 +265,37 @@ class Boss extends Actor {
       if("gossip".equalsIgnoreCase(algo)){
         actors(numofNodes/2) ! Rumour(actors, adjList, numofNodes/2) //trigger
       }else if("pushsum".equalsIgnoreCase(algo)){
-        actors(numofNodes/2) ! PushSum(actors, adjList, numofNodes/2, 1, 1) // trigger
+        actors(numofNodes/2) ! PushSum(actors, adjList, numofNodes/2, 0, 0) // trigger
       }
       startTime = System.currentTimeMillis()
+      endTime = startTime
     case terminate(index:Int) =>
       terminatedNodes += 1
+      percent = terminatedNodes.toDouble *100/numofNodes.toDouble
+      //if(System.currentTimeMillis() - endTime > 10000)
+      println(Math.round(percent*100.0)/100.0 + "% nodes terminated, nodes left = " + (numofNodes - terminatedNodes) + ", time elapsed = " + (endTime - startTime) + "msec")
       endTime = System.currentTimeMillis()
-      //println("A node terminated, total time = " + (endTime - startTime) + ", algo = " + algo + ", topology = " +topology)
       if(terminatedNodes == numofNodes){
         endTime = System.currentTimeMillis()
         println("All nodes terminated, total time = " + (endTime - startTime) + "msec, algo = " + algo + ", topology = " +topology)
         context.system.shutdown()
       }
+
+      //update graph by removing terminated node
+
+      /*for( nb <- 0 to adjList(index).size)
+      {
+        var vec = Vector[Int]()
+        for(i <- 0 to adjList(adjList(index)(nb)).size)
+        {
+          if(adjList(adjList(index)(nb))(i) != index)
+          {
+            vec = vec :+ adjList(adjList(index)(nb))(i)
+          }
+        }
+        adjList(adjList(index)(nb)) = adjList(adjList(index)(nb)) :+ vec
+      }*/
+
   }
 
   def getGraph(): Vector[Vector[Int]] ={
